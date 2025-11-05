@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Neuromorphic OCR</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #e0e0e0;
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  h2 {
+    color: #333;
+    text-align: center;
+    margin-bottom: 30px;
+  }
+
+  .neuromorphic {
+    border-radius: 20px;
+    background: #e0e0e0;
+    box-shadow: 9px 9px 16px #bebebe,
+                -9px -9px 16px #ffffff;
+    padding: 15px;
+    margin: 10px 0;
+    transition: all 0.2s ease-in-out;
+  }
+
+  #pasteBox {
+    width: 100%;
+    max-width: 600px;
+    height: 150px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    text-align: center;
+    color: #666;
+  }
+
+  #canvasContainer {
+    width: 100%;
+    max-width: 600px;
+    margin-top: 15px;
+    border-radius: 20px;
+    overflow: hidden;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    border-radius: 20px;
+    cursor: crosshair;
+    background: #f0f0f0;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    max-width: 600px;
+    padding: 12px 15px;
+    font-size: 1rem;
+    outline: none;
+    border: none;
+    border-radius: 20px;
+    box-shadow: inset 5px 5px 10px #bebebe,
+                inset -5px -5px 10px #ffffff;
+    margin-bottom: 10px;
+  }
+
+  textarea {
+    width: 100%;
+    max-width: 600px;
+    height: 100px;
+    border-radius: 20px;
+    border: none;
+    padding: 12px;
+    font-size: 1rem;
+    resize: none;
+    box-shadow: inset 5px 5px 10px #bebebe,
+                inset -5px -5px 10px #ffffff;
+    margin-top: 10px;
+  }
+
+  button {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 20px;
+    margin: 5px;
+    font-size: 1rem;
+    cursor: pointer;
+    background: #e0e0e0;
+    box-shadow: 5px 5px 10px #bebebe,
+                -5px -5px 10px #ffffff;
+    transition: all 0.2s ease-in-out;
+  }
+
+  button:hover {
+    box-shadow: inset 5px 5px 10px #bebebe,
+                inset -5px -5px 10px #ffffff;
+  }
+
+  #alert {
+    color: #ff4d4f;
+    font-weight: bold;
+    display: none;
+    text-align: center;
+    margin: 10px 0;
+  }
+</style>
+</head>
+<body>
+
+<h2>Neuromorphic OCR Tool</h2>
+
+<div id="pasteBox" class="neuromorphic" contenteditable="true">
+  Click here, press Ctrl+V, or drag & drop an image
+</div>
+
+<input type="text" id="imageURL" class="neuromorphic" placeholder="Enter image URL and press Enter" />
+<div id="alert">CORS or load error occurred!</div>
+
+<div id="canvasContainer" class="neuromorphic">
+  <canvas id="canvas"></canvas>
+</div>
+
+<div>
+  <button id="ocrFull">Run OCR on Full Image</button>
+  <button id="ocrSelection">Run OCR on Selection</button>
+</div>
+
+<textarea id="ocrResult" placeholder="OCR result appears here"></textarea>
+<button id="copyButton">Copy Text</button>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+
+<script>
+  // --- JS remains the same as previous drag/drop/paste/URL OCR script ---
+  const pasteBox = document.getElementById('pasteBox');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const ocrFull = document.getElementById('ocrFull');
+  const ocrSelection = document.getElementById('ocrSelection');
+  const ocrResult = document.getElementById('ocrResult');
+  const copyButton = document.getElementById('copyButton');
+  const canvasContainer = document.getElementById('canvasContainer');
+  const imageURL = document.getElementById('imageURL');
+  const alertBox = document.getElementById('alert');
+
+  let imgObj = null;
+  let scale = 1;
+  let isDragging = false;
+  let rect = {};
+  let startX, startY;
+
+  function updateCanvas() {
+    if (!imgObj) return;
+    const containerWidth = canvasContainer.clientWidth;
+    scale = containerWidth / imgObj.width;
+    canvas.width = imgObj.width;
+    canvas.height = imgObj.height;
+    canvas.style.width = containerWidth + 'px';
+    canvas.style.height = (imgObj.height * scale) + 'px';
+    draw();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(imgObj, 0, 0);
+    if (rect.width && rect.height) {
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 2 / scale;
+      ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+    }
+  }
+
+  function loadImage(img) {
+    imgObj = img;
+    rect = {};
+    updateCanvas();
+    alertBox.style.display = 'none';
+  }
+
+  // Paste image
+  pasteBox.addEventListener('paste', (e) => {
+    const items = e.clipboardData.items;
+    for (let item of items) {
+      if (item.type.indexOf('image') !== -1) {
+        const blob = item.getAsFile();
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => { loadImage(img); URL.revokeObjectURL(url); };
+        img.src = url;
+        e.preventDefault();
+        break;
+      }
+    }
+  });
+
+  // Drag & Drop
+  pasteBox.addEventListener('dragover', (e) => e.preventDefault());
+  pasteBox.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (!e.dataTransfer.files.length) return;
+    const file = e.dataTransfer.files[0];
+    if (!file.type.startsWith('image/')) return alert("Please drop an image file.");
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { loadImage(img); URL.revokeObjectURL(url); };
+    img.src = url;
+  });
+
+  // URL load
+  imageURL.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const url = imageURL.value.trim();
+      if (!url) return;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => loadImage(img);
+      img.onerror = () => alertBox.style.display = 'block';
+      img.src = url;
+    }
+  });
+
+  // Rectangle selection
+  canvas.addEventListener('mousedown', (e) => {
+    if (!imgObj) return;
+    const rectCanvas = canvas.getBoundingClientRect();
+    startX = (e.clientX - rectCanvas.left) / scale;
+    startY = (e.clientY - rectCanvas.top) / scale;
+    isDragging = true;
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const rectCanvas = canvas.getBoundingClientRect();
+    const mouseX = (e.clientX - rectCanvas.left) / scale;
+    const mouseY = (e.clientY - rectCanvas.top) / scale;
+    rect = { x: startX, y: startY, width: mouseX - startX, height: mouseY - startY };
+    draw();
+  });
+
+  canvas.addEventListener('mouseup', () => isDragging = false);
+
+  async function runOCR(dataURL) {
+    ocrResult.value = "Processing OCR...";
+    try {
+      const { data: { text } } = await Tesseract.recognize(dataURL, 'eng', { logger: m => console.log(m) });
+      ocrResult.value = text;
+    } catch (err) {
+      ocrResult.value = "OCR failed: " + err.message;
+    }
+  }
+
+  ocrFull.addEventListener('click', () => {
+    if (!imgObj) return alert("Paste, drop, or load an image first!");
+    const tempCanvas = document.createElement('canvas');
+    const tCtx = tempCanvas.getContext('2d');
+    tempCanvas.width = imgObj.width;
+    tempCanvas.height = imgObj.height;
+    tCtx.drawImage(imgObj, 0, 0);
+    runOCR(tempCanvas.toDataURL());
+  });
+
+  ocrSelection.addEventListener('click', () => {
+    if (!imgObj) return alert("Paste, drop, or load an image first!");
+    if (!rect.width || !rect.height) return alert("Draw a selection first!");
+    const tempCanvas = document.createElement('canvas');
+    const tCtx = tempCanvas.getContext('2d');
+    tempCanvas.width = Math.abs(rect.width);
+    tempCanvas.height = Math.abs(rect.height);
+    tCtx.drawImage(
+      imgObj,
+      rect.width < 0 ? rect.x + rect.width : rect.x,
+      rect.height < 0 ? rect.y + rect.height : rect.y,
+      Math.abs(rect.width),
+      Math.abs(rect.height),
+      0,
+      0,
+      Math.abs(rect.width),
+      Math.abs(rect.height)
+    );
+    runOCR(tempCanvas.toDataURL());
+  });
+
+  copyButton.addEventListener('click', () => {
+    ocrResult.select();
+    document.execCommand('copy');
+  });
+
+  window.addEventListener('resize', updateCanvas);
+</script>
+</body>
+</html>
